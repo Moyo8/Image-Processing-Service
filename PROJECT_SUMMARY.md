@@ -1,6 +1,6 @@
 # Image Processing Service - Project Summary
 
-## 🎉 What We've Built
+## 🎉 What I've Built
 
 A comprehensive image processing service similar to Cloudinary with the following features:
 
