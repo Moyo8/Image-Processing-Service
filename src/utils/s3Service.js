@@ -29,7 +29,6 @@ class S3Service {
         Key: key,
         Body: fileBuffer,
         ContentType: contentType,
-        ACL: 'public-read'
       });
       await s3Client.send(command);
       logger.info(`File uploaded successfully to S3: ${key}`);
