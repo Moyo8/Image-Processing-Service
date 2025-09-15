@@ -1,5 +1,6 @@
 const redis = require('redis');
 const logger = require('./logger');
+const { URL } = require('url');
 
 class CacheService {
   constructor() {
@@ -7,14 +8,41 @@ class CacheService {
     this.isConnected = false;
   }
 
+  _sanitizeRedisUrl(raw) {
+    if (!raw) return null;
+    // Remove accidental surrounding angle brackets that users sometimes paste
+    let s = raw.trim();
+    if (s.startsWith('<') && s.endsWith('>')) {
+      s = s.slice(1, -1);
+    }
+    // Some dashboards show the password wrapped in <...>, remove those too
+    s = s.replace(/<([^>]+)>/g, '$1');
+    return s;
+  }
+
   async connect() {
+    const rawUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    const redisUrl = this._sanitizeRedisUrl(rawUrl);
+
     try {
-      this.client = redis.createClient({
-        url: process.env.REDIS_URL || 'redis://localhost:6379'
-      });
+      // Parse to detect scheme (redis:// vs rediss://)
+      let options = { url: redisUrl, socket: { connectTimeout: 10000 } };
+      try {
+        const parsed = new URL(redisUrl);
+        if (parsed.protocol === 'rediss:') {
+          // Enable TLS for secure Redis endpoints
+          options.socket.tls = true;
+          // Accept most certificates (use stricter checks in production)
+          options.socket.rejectUnauthorized = false;
+        }
+      } catch (err) {
+        logger.warn('Could not parse REDIS_URL, falling back to provided string');
+      }
+
+      this.client = redis.createClient(options);
 
       this.client.on('error', (err) => {
-        logger.error('Redis Client Error:', err);
+        logger.error('Redis Client Error:', err && err.message ? err.message : err);
         this.isConnected = false;
       });
 
@@ -30,17 +58,14 @@ class CacheService {
       await this.client.connect();
       return this.client;
     } catch (error) {
-      logger.warn('Redis connection failed:', error);
+      logger.warn('Redis connection failed:', error && error.message ? error.message : error);
       this.isConnected = false;
       return null;
     }
   }
 
   async get(key) {
-    if (!this.isConnected || !this.client) {
-      return null;
-    }
-
+    if (!this.isConnected || !this.client) return null;
     try {
       const value = await this.client.get(key);
       return value ? JSON.parse(value) : null;
@@ -51,10 +76,7 @@ class CacheService {
   }
 
   async set(key, value, ttl = 3600) {
-    if (!this.isConnected || !this.client) {
-      return false;
-    }
-
+    if (!this.isConnected || !this.client) return false;
     try {
       await this.client.setEx(key, ttl, JSON.stringify(value));
       return true;
@@ -65,10 +87,7 @@ class CacheService {
   }
 
   async del(key) {
-    if (!this.isConnected || !this.client) {
-      return false;
-    }
-
+    if (!this.isConnected || !this.client) return false;
     try {
       await this.client.del(key);
       return true;
@@ -79,10 +98,7 @@ class CacheService {
   }
 
   async flush() {
-    if (!this.isConnected || !this.client) {
-      return false;
-    }
-
+    if (!this.isConnected || !this.client) return false;
     try {
       await this.client.flushAll();
       return true;
@@ -93,10 +109,7 @@ class CacheService {
   }
 
   async exists(key) {
-    if (!this.isConnected || !this.client) {
-      return false;
-    }
-
+    if (!this.isConnected || !this.client) return false;
     try {
       const result = await this.client.exists(key);
       return result === 1;
@@ -107,10 +120,7 @@ class CacheService {
   }
 
   async keys(pattern) {
-    if (!this.isConnected || !this.client) {
-      return [];
-    }
-
+    if (!this.isConnected || !this.client) return [];
     try {
       return await this.client.keys(pattern);
     } catch (error) {
