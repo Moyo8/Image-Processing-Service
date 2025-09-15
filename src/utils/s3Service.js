@@ -13,6 +13,7 @@ const s3Client = new S3Client({
 class S3Service {
   constructor() {
     this.bucketName = process.env.S3_BUCKET_NAME;
+    this.region = process.env.AWS_REGION || 'us-east-1';
   }
 
   /**
@@ -20,7 +21,7 @@ class S3Service {
    * @param {Buffer} fileBuffer - File buffer
    * @param {string} key - S3 object key
    * @param {string} contentType - File content type
-   * @returns {Promise<Object>} Upload result
+   * @returns {Promise<Object>} Upload result with public URL
    */
   async uploadFile(fileBuffer, key, contentType) {
     try {
@@ -31,16 +32,35 @@ class S3Service {
         ContentType: contentType,
       });
       await s3Client.send(command);
+      
+      // Generate public URL
+      const publicUrl = this.generatePublicUrl(key);
+      
       logger.info(`File uploaded successfully to S3: ${key}`);
       return {
         success: true,
         key,
-        bucket: this.bucketName
+        bucket: this.bucketName,
+        publicUrl: publicUrl  // ✅ Added public URL to return object
       };
     } catch (error) {
       logger.error('S3 upload error:', error);
       throw new Error(`Failed to upload file to S3: ${error.message}`);
     }
+  }
+
+  /**
+   * Generate public URL for S3 object
+   * @param {string} key - S3 object key
+   * @returns {string} Public URL
+   */
+  generatePublicUrl(key) {
+    // For us-east-1, we can use the shorter format
+    if (this.region === 'us-east-1') {
+      return `https://${this.bucketName}.s3.amazonaws.com/${key}`;
+    }
+    // For other regions, include the region in the URL
+    return `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
   /**

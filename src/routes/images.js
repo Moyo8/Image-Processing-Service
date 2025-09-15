@@ -46,7 +46,7 @@ router.post('/', auth, uploadLimiter, userUploadLimiter, upload, handleUploadErr
     const metadata = await imageProcessor.getMetadata(req.file.buffer);
 
     // Upload to S3
-  const uploadResult = await s3Service.uploadFile(
+    const uploadResult = await s3Service.uploadFile(
       req.file.buffer,
       s3Key,
       req.file.mimetype
@@ -65,7 +65,7 @@ router.post('/', auth, uploadLimiter, userUploadLimiter, upload, handleUploadErr
       },
       s3Key,
       s3Bucket: uploadResult.bucket,
-      publicUrl: uploadResult.location,
+      publicUrl: uploadResult.publicUrl,  // ✅ Fixed: was uploadResult.location
       metadata: {
         colorSpace: metadata.colorSpace,
         hasAlpha: metadata.hasAlpha,
@@ -320,7 +320,7 @@ router.delete('/:id', auth, invalidateUserCache, invalidateImageCache, async (re
     }
 
     // Delete from S3
-  await s3Service.deleteFile(image.s3Key);
+    await s3Service.deleteFile(image.s3Key);
 
     // Update user storage usage
     const user = await User.findById(req.user.id);
