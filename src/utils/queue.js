@@ -1,5 +1,6 @@
 const Queue = require('bull');
 const redis = require('redis');
+const { URL } = require('url');
 const imageProcessor = require('../utils/imageProcessor');
 const s3Service = require('../utils/s3Service');
 const Image = require('../models/Image');
@@ -7,15 +8,64 @@ const User = require('../models/User');
 const logger = require('../utils/logger');
 
 // Create Redis connection for Bull
-const redisConfig = {
-  redis: {
-    port: process.env.REDIS_PORT || 6379,
-    host: process.env.REDIS_HOST || 'localhost',
-    password: process.env.REDIS_PASSWORD || undefined
-  }
-};
+// Support either individual host/port/password env vars OR a single REDIS_URL
+function sanitizeRedisUrl(raw) {
+  if (!raw) return null;
+  let s = raw.trim();
+  if (s.startsWith('<') && s.endsWith('>')) s = s.slice(1, -1);
+  s = s.replace(/<([^>]+)>/g, '$1');
+  return s;
+}
 
-// Create queue
+let redisConfig;
+const rawRedisUrl = process.env.REDIS_URL || null;
+const redisUrl = sanitizeRedisUrl(rawRedisUrl);
+if (redisUrl) {
+  // pass options through to ioredis via Bull
+  // important: set maxRetriesPerRequest to null to avoid the default 20 retries limit
+  // and add a retryStrategy so the client will attempt reconnects gracefully
+  // Also detect rediss:// (TLS) and add a tls.servername for SNI if available (Redis Cloud)
+  let parsed;
+  try {
+    parsed = new URL(redisUrl);
+  } catch (e) {
+    parsed = null;
+  }
+
+  const redisOptions = {
+    url: redisUrl,
+    maxRetriesPerRequest: null,
+    // Reduce long hangs while trying to connect; 10s is a reasonable default
+    socket: { connectTimeout: 10000 },
+    // retryStrategy receives times => milliseconds to wait before reconnect
+    retryStrategy: function (times) {
+      // exponential backoff capped at 30s
+      const delay = Math.min(30000, Math.pow(2, times) * 100);
+      return delay;
+    }
+  };
+
+  if (parsed && parsed.protocol === 'rediss:') {
+    // ioredis accepts a `tls` object to enable TLS SNI; include servername to help with some providers
+    redisOptions.tls = { servername: parsed.hostname, rejectUnauthorized: false };
+  }
+
+  redisConfig = { redis: redisOptions };
+} else {
+  redisConfig = {
+    redis: {
+      port: process.env.REDIS_PORT || 6379,
+      host: process.env.REDIS_HOST || 'localhost',
+      password: process.env.REDIS_PASSWORD || undefined,
+      maxRetriesPerRequest: null,
+      retryStrategy: function (times) {
+        return Math.min(30000, Math.pow(2, times) * 100);
+      }
+    }
+  };
+}
+
+// Create queue with robust Redis options
 const imageProcessingQueue = new Queue('image processing', redisConfig);
 
 // Process image transformation jobs
