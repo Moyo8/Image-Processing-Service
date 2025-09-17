@@ -127,6 +127,13 @@ imageProcessingQueue.process('transform', async (job) => {
     // Get metadata of transformed image
     const transformedMetadata = await imageProcessor.getMetadata(transformedBuffer);
     
+    // Normalize transformation keys to match schema enum
+    const typeKeyMap = { filters: 'filter' };
+    const normalizedTransformations = Object.keys(transformations).map((key) => ({
+      type: typeKeyMap[key] || key,
+      parameters: transformations[key]
+    }));
+
     // Create new image record for transformed image
     const transformedImage = new Image({
       userId,
@@ -140,16 +147,13 @@ imageProcessingQueue.process('transform', async (job) => {
       },
       s3Key: transformedS3Key,
       s3Bucket: uploadResult.bucket,
-      publicUrl: uploadResult.location,
+      publicUrl: uploadResult.publicUrl,
       metadata: {
         colorSpace: transformedMetadata.colorSpace,
         hasAlpha: transformedMetadata.hasAlpha,
         format: transformedMetadata.format
       },
-      transformations: Object.keys(transformations).map(type => ({
-        type,
-        parameters: transformations[type]
-      }))
+      transformations: normalizedTransformations
     });
     
     await transformedImage.save();

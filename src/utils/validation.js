@@ -52,7 +52,7 @@ const transformationValidation = Joi.object({
       height: Joi.number().integer().min(1).max(4000),
       fit: Joi.string().valid('cover', 'contain', 'fill', 'inside', 'outside').default('inside'),
       withoutEnlargement: Joi.boolean().default(true)
-    }).and('width', 'height'),
+    }).or('width', 'height'),
     
     crop: Joi.object({
       width: Joi.number().integer().min(1).required(),
