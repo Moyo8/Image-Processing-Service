@@ -163,7 +163,9 @@ class ImageProcessor {
       }
 
       if (filters.contrast) {
-        sharpInstance = sharpInstance.modulate({ contrast: filters.contrast });
+        const contrastFactor = filters.contrast;
+        const intercept = 128 * (1 - contrastFactor);
+        sharpInstance = sharpInstance.linear(contrastFactor, intercept);
       }
 
       if (filters.saturation) {
